@@ -1,0 +1,129 @@
+name: Deploy Android
+
+# Triggered by a version tag on main: v2.0.0, v2.1.0, etc.
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions: {}   # workflow-level sıfır izin
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false   # deploy sırasında iptal etme
+
+jobs:
+  validate-tag:
+    name: Verify tag is on main
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
+        with:
+          fetch-depth: 0
+
+      - name: Check tag is on main
+        run: |
+          TAG=${{ github.ref_name }}
+          if ! git branch -r --contains "refs/tags/$TAG" | grep -q "origin/main"; then
+            echo "ERROR: Tag $TAG is not on main. Aborting."
+            exit 1
+          fi
+
+  release-android:
+    name: Android → Play Store
+    runs-on: ubuntu-latest
+    environment: production
+    needs: validate-tag
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
+
+      - name: Extract version
+        id: version
+        run: |
+          TAG=${{ github.ref_name }}
+          echo "version=${TAG#v}" >> $GITHUB_OUTPUT
+          echo "build_number=$(date -u +%Y%m%d%H%M)" >> $GITHUB_OUTPUT
+
+      - name: Setup Java
+        uses: actions/setup-java@3a4f6e1af504cf6a31855fa899c6aa5355ba6c12  # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Restore Gradle Cache
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684  # v4
+        with:
+          path: ~/.gradle/caches
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/gradle-wrapper.properties') }}
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@e938fdf56512cc96ef2f93601f81e6058e503b01  # v2
+        with:
+          flutter-version-file: source/frontend/pubspec.yaml
+          channel: stable
+          cache: true
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@a2bbe5b1937ab240a9d2f21d5fbe03c7b2888222  # v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+          working-directory: source/frontend/android
+
+      - name: Install Flutter dependencies
+        working-directory: source/frontend
+        run: flutter pub get
+
+      - name: Generate code
+        working-directory: source/frontend
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Write Firebase config
+        run: |
+          echo '${{ secrets.GOOGLE_SERVICES_JSON }}' \
+            > source/frontend/android/app/google-services.json
+
+      - name: Decode keystore
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode \
+            > source/frontend/android/app/release.jks
+
+      - name: Write key.properties
+        run: |
+          echo "storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" > source/frontend/android/key.properties
+          echo "keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}" >> source/frontend/android/key.properties
+          echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" >> source/frontend/android/key.properties
+          echo "storeFile=app/release.jks" >> source/frontend/android/key.properties
+
+      - name: Write Play Store service account key
+        run: |
+          mkdir -p source/frontend/android/fastlane/keys
+          echo '${{ secrets.PLAY_STORE_SERVICE_ACCOUNT_JSON }}' \
+            > source/frontend/android/fastlane/keys/play_store_key.json
+
+      - name: Fastlane beta
+        working-directory: source/frontend/android
+        env:
+          KEYSTORE_PATH:                app/release.jks
+          KEYSTORE_PASSWORD:            ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS:                    ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD:                 ${{ secrets.ANDROID_KEY_PASSWORD }}
+          APP_VERSION:                  ${{ steps.version.outputs.version }}
+          BUILD_NUMBER:                 ${{ steps.version.outputs.build_number }}
+          DART_DEFINE_APP_ENV:          prod
+          DART_DEFINE_SUPABASE_URL:     ${{ secrets.PROD_SUPABASE_URL }}
+          DART_DEFINE_SUPABASE_ANON_KEY: ${{ secrets.PROD_SUPABASE_ANON_KEY }}
+          DART_DEFINE_RC_ANDROID_KEY:   ${{ secrets.PROD_RC_KEY_ANDROID }}
+          DART_DEFINE_MIXPANEL_TOKEN:   ${{ secrets.MIXPANEL_TOKEN }}
+        run: bundle exec fastlane beta
+
+      - name: Save Gradle Cache
+        if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684  # v4
+        with:
+          path: ~/.gradle/caches
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/gradle-wrapper.properties') }}

@@ -1,0 +1,58 @@
+default_platform(:ios)
+
+platform :ios do
+
+  desc "Sync certificates (read-only, CI)"
+  lane :sync_certs do
+    match(
+      type: "appstore",
+      readonly: true,
+      api_key_path: "fastlane/keys/asc_key.json"
+    )
+  end
+
+  desc "Build and upload to TestFlight (beta)"
+  lane :beta do
+    version     = ENV.fetch("APP_VERSION",  "2.0.0")
+    build_num   = ENV.fetch("BUILD_NUMBER", "1")
+
+    sync_certs
+
+    # Dart-define args for flutter build
+    dart_defines = [
+      "APP_ENV=#{ENV.fetch('DART_DEFINE_APP_ENV', 'prod')}",
+      "SUPABASE_URL=#{ENV.fetch('DART_DEFINE_SUPABASE_URL', '')}",
+      "SUPABASE_ANON_KEY=#{ENV.fetch('DART_DEFINE_SUPABASE_ANON_KEY', '')}",
+      "REVENUECAT_APPLE_KEY=#{ENV.fetch('DART_DEFINE_RC_IOS_KEY', '')}",
+      "MIXPANEL_TOKEN=#{ENV.fetch('DART_DEFINE_MIXPANEL_TOKEN', '')}",
+    ].map { |d| "--dart-define=#{d}" }.join(" ")
+
+    sh(
+      "cd ../../ && flutter build ipa --release " \
+      "--build-name=#{version} --build-number=#{build_num} " \
+      "#{dart_defines}"
+    )
+
+    upload_to_testflight(
+      ipa:            "../../build/ios/ipa/waketale.ipa",
+      api_key_path:   "fastlane/keys/asc_key.json",
+      skip_waiting_for_build_processing: true,
+    )
+  end
+
+  desc "Promote TestFlight build to App Store production"
+  lane :release do
+    version = ENV.fetch("APP_VERSION", "2.0.0")
+
+    deliver(
+      api_key_path:         "fastlane/keys/asc_key.json",
+      app_version:          version,
+      submit_for_review:    true,
+      automatic_release:    false,
+      force:                true,
+      skip_screenshots:     true,
+      skip_metadata:        true,
+    )
+  end
+
+end

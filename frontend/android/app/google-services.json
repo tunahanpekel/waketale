@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "485329999102",
+    "project_id": "waketale",
+    "storage_bucket": "waketale.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:485329999102:android:c63f22f0546c85180341af",
+        "android_client_info": {
+          "package_name": "com.waketale.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAQJxQ7Dp9MVDWIl6rwN2wmRIBVG-9nF60"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:485329999102:android:c63f22f0546c85180341af",
+        "android_client_info": {
+          "package_name": "com.waketale.app.debug"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAQJxQ7Dp9MVDWIl6rwN2wmRIBVG-9nF60"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

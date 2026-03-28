@@ -1,0 +1,8 @@
+# Copy this file to key.properties (gitignored) and fill in your keystore details.
+# key.properties is used by android/app/build.gradle.kts for signing release builds.
+# DevOps / CI writes key.properties from GitHub Secrets — never commit key.properties.
+
+storePassword=YOUR_STORE_PASSWORD
+keyPassword=YOUR_KEY_PASSWORD
+keyAlias=YOUR_KEY_ALIAS
+storeFile=release.jks

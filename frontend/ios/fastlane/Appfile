@@ -1,0 +1,3 @@
+app_identifier("com.waketale.app")
+apple_dev_portal_id(ENV["APPLE_DEV_PORTAL_ID"] || "")
+itc_team_id(ENV["ITC_TEAM_ID"] || "")

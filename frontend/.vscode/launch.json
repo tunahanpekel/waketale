@@ -1,0 +1,18 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Waketale v2 (dev)",
+      "request": "launch",
+      "type": "dart",
+      "args": [
+        "--dart-define=APP_ENV=dev",
+        "--dart-define=SUPABASE_URL=https://hmyntfwbfuawvcitbmce.supabase.co",
+        "--dart-define=SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhteW50ZndiZnVhd3ZjaXRibWNlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM3ODI2OTEsImV4cCI6MjA4OTM1ODY5MX0.nJWXVfNybdwUocnPXDsxVa1im20R7c7__PqcPH_Z5LM",
+        "--dart-define=REVENUECAT_APPLE_KEY=",
+        "--dart-define=REVENUECAT_GOOGLE_KEY=",
+        "--dart-define=MIXPANEL_TOKEN="
+      ]
+    }
+  ]
+}

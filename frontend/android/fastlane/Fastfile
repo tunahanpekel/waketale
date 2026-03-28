@@ -1,0 +1,99 @@
+# android/fastlane/Fastfile
+# Waketale v2 — com.waketale.app
+#
+# Lanes:
+#   bundle exec fastlane beta     → build AAB + Play Store internal track (CI calls this on tag push)
+#   bundle exec fastlane release  → promote internal → production 10% rollout (manual, after QA)
+#   bundle exec fastlane promote from:internal to:alpha  → arbitrary track promotion
+#
+# Required ENV vars (set in GitHub Actions secrets):
+#   KEYSTORE_PATH, KEYSTORE_PASSWORD, KEY_ALIAS, KEY_PASSWORD
+#   DART_DEFINE_APP_ENV, DART_DEFINE_SUPABASE_URL, DART_DEFINE_SUPABASE_ANON_KEY
+#   DART_DEFINE_RC_ANDROID_KEY  (maps to dart-define REVENUECAT_GOOGLE_KEY)
+#   DART_DEFINE_MIXPANEL_TOKEN
+#   APP_VERSION, BUILD_NUMBER
+#
+# NOTE: flutter pub get + build_runner are run by CI before Fastlane.
+#       The `beta` lane only runs flutter build appbundle (not pub get).
+#
+# NOTE: First upload to Play Console must be done MANUALLY — supply only works
+#       on existing apps. Create the app in Play Console → upload one AAB manually
+#       → after that all subsequent uploads are automated.
+
+# frozen_string_literal: true
+
+default_platform :android
+
+PACKAGE_NAME = "com.waketale.app"
+# PROJECT_ROOT resolves to source/frontend/ (two levels up from android/fastlane/)
+PROJECT_ROOT = File.expand_path("../../", __dir__)
+FLUTTER_BIN  = "flutter"
+
+def dart_defines
+  {
+    "APP_ENV"               => ENV.fetch("DART_DEFINE_APP_ENV", "prod"),
+    "SUPABASE_URL"          => ENV["DART_DEFINE_SUPABASE_URL"],
+    "SUPABASE_ANON_KEY"     => ENV["DART_DEFINE_SUPABASE_ANON_KEY"],
+    "REVENUECAT_GOOGLE_KEY" => ENV["DART_DEFINE_RC_ANDROID_KEY"],
+    "MIXPANEL_TOKEN"        => ENV["DART_DEFINE_MIXPANEL_TOKEN"],
+  }.compact.map { |k, v| "--dart-define=#{k}=#{v}" }.join(" ")
+end
+
+platform :android do
+
+  # ── beta — build + Play Internal (CI calls this on every tag push) ────────────
+  desc "Build AAB and upload to Play Store internal track"
+  lane :beta do
+    version   = ENV.fetch("APP_VERSION", "2.0.0")
+    build_num = ENV.fetch("BUILD_NUMBER", Time.now.utc.strftime("%Y%m%d%H%M"))
+
+    Dir.chdir(PROJECT_ROOT) do
+      sh "#{FLUTTER_BIN} build appbundle --release " \
+         "--build-name=#{version} --build-number=#{build_num} #{dart_defines}"
+    end
+
+    upload_to_play_store(
+      package_name:            PACKAGE_NAME,
+      track:                   "internal",
+      aab:                     "#{PROJECT_ROOT}/build/app/outputs/bundle/release/app-release.aab",
+      json_key:                "fastlane/keys/play_store_key.json",
+      skip_upload_apk:         true,
+      skip_upload_metadata:    true,
+      skip_upload_changelogs:  true,
+      skip_upload_images:      true,
+      skip_upload_screenshots: true,
+      release_status:          "draft",
+    )
+  end
+
+  # ── release — promote internal → production (manual, after QA sign-off) ───────
+  desc "Promote internal build to Play Store production (10% rollout)"
+  lane :release do
+    upload_to_play_store(
+      package_name:         PACKAGE_NAME,
+      track:                "internal",
+      track_promote_to:     "production",
+      rollout:              "0.1",
+      json_key:             "fastlane/keys/play_store_key.json",
+      skip_upload_apk:      true,
+      skip_upload_aab:      true,
+      skip_upload_metadata: false,
+    )
+  end
+
+  # ── promote — arbitrary track promotion ──────────────────────────────────────
+  # Usage: bundle exec fastlane promote from:internal to:alpha
+  desc "Promote build between Play Store tracks"
+  lane :promote do |options|
+    upload_to_play_store(
+      package_name:         PACKAGE_NAME,
+      track:                options[:from] || "internal",
+      track_promote_to:     options[:to]   || "alpha",
+      json_key:             "fastlane/keys/play_store_key.json",
+      skip_upload_apk:      true,
+      skip_upload_aab:      true,
+      skip_upload_metadata: true,
+    )
+  end
+
+end

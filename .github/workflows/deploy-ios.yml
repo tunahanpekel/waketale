@@ -1,0 +1,103 @@
+name: Deploy iOS
+
+# Triggered by a version tag on main: v2.0.0, v2.1.0, etc.
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions: {}   # workflow-level sıfır izin
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false   # deploy sırasında iptal etme
+
+jobs:
+  validate-tag:
+    name: Verify tag is on main
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
+        with:
+          fetch-depth: 0
+
+      - name: Check tag is on main
+        run: |
+          TAG=${{ github.ref_name }}
+          if ! git branch -r --contains "refs/tags/$TAG" | grep -q "origin/main"; then
+            echo "ERROR: Tag $TAG is not on main. Aborting."
+            exit 1
+          fi
+
+  release-ios:
+    name: iOS → App Store
+    runs-on: macos-15   # Xcode 16.x — App Store Connect 2026 uyumlu
+    environment: production
+    needs: validate-tag
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4
+
+      - name: Extract version
+        id: version
+        run: |
+          TAG=${{ github.ref_name }}
+          echo "version=${TAG#v}" >> $GITHUB_OUTPUT
+          echo "build_number=$(date -u +%Y%m%d%H%M)" >> $GITHUB_OUTPUT
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@e938fdf56512cc96ef2f93601f81e6058e503b01  # v2
+        with:
+          flutter-version-file: source/frontend/pubspec.yaml
+          channel: stable
+          cache: true
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@a2bbe5b1937ab240a9d2f21d5fbe03c7b2888222  # v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+          working-directory: source/frontend/ios
+
+      - name: Install Flutter dependencies
+        working-directory: source/frontend
+        run: flutter pub get
+
+      - name: Generate code
+        working-directory: source/frontend
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Write Firebase config (iOS)
+        run: |
+          echo '${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}' \
+            > source/frontend/ios/Runner/GoogleService-Info.plist
+
+      - name: Write App Store Connect API key
+        run: |
+          mkdir -p source/frontend/ios/fastlane/keys
+          echo '${{ secrets.APP_STORE_CONNECT_API_KEY_JSON }}' \
+            > source/frontend/ios/fastlane/keys/asc_key.json
+
+      - name: Setup SSH for Match
+        uses: webfactory/ssh-agent@a6f90b1f127823b31d4d4a8d96047790581349bd  # v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.MATCH_SSH_PRIVATE_KEY }}
+
+      - name: Fastlane beta
+        working-directory: source/frontend/ios
+        env:
+          MATCH_PASSWORD:               ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_URL:                ${{ secrets.MATCH_GIT_URL }}
+          ASC_KEY_ID:                   ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID:                ${{ secrets.ASC_ISSUER_ID }}
+          APP_VERSION:                  ${{ steps.version.outputs.version }}
+          BUILD_NUMBER:                 ${{ steps.version.outputs.build_number }}
+          DART_DEFINE_APP_ENV:          prod
+          DART_DEFINE_SUPABASE_URL:     ${{ secrets.PROD_SUPABASE_URL }}
+          DART_DEFINE_SUPABASE_ANON_KEY: ${{ secrets.PROD_SUPABASE_ANON_KEY }}
+          DART_DEFINE_RC_IOS_KEY:       ${{ secrets.PROD_RC_KEY_IOS }}
+          DART_DEFINE_MIXPANEL_TOKEN:   ${{ secrets.MIXPANEL_TOKEN }}
+        run: bundle exec fastlane beta
